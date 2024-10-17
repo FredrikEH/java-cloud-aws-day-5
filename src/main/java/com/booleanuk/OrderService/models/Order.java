@@ -37,6 +37,17 @@ public class Order {
         this.quantity = quantity;
         this.amount = amount;
         this.processed = processed;
-        this.total = quantity * amount;
+        this.total = total;
+    }
+
+    public Order(String product, int quantity, int amount) {
+        this.product = product;
+        this.quantity = quantity;
+        this.amount = amount;
+        this.processed = false;
+    }
+
+    public void calculateTotal(){
+        this.total = this.amount * this.quantity;
     }
 }
