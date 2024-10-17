@@ -2,13 +2,18 @@ package com.booleanuk.OrderService.controllers;
 
 
 import com.booleanuk.OrderService.models.Order;
+import com.booleanuk.OrderService.repositories.OrderRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+import software.amazon.awssdk.annotations.Generated;
+import software.amazon.awssdk.annotations.ThreadSafe;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.eventbridge.EventBridgeClient;
 import software.amazon.awssdk.services.eventbridge.model.PutEventsRequest;
@@ -17,6 +22,7 @@ import software.amazon.awssdk.services.sns.model.PublishRequest;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sns.SnsClient;
 import software.amazon.awssdk.services.sqs.model.DeleteMessageRequest;
+import software.amazon.awssdk.services.sqs.model.DeleteMessageResponse;
 import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest;
 
@@ -25,6 +31,9 @@ import java.util.List;
 @RestController
 @RequestMapping("orders")
 public class OrderController {
+    @Autowired
+    private OrderRepository orderRepository;
+
     private SqsClient sqsClient;
     private SnsClient snsClient;
     private EventBridgeClient eventBridgeClient;
@@ -38,15 +47,16 @@ public class OrderController {
         this.snsClient = SnsClient.builder().build();
         this.eventBridgeClient = EventBridgeClient.builder().build();
 
-        this.queueUrl = "";
-        this.topicArn = "";
-        this.eventBusName = "";
+        this.queueUrl = "https://sqs.eu-west-1.amazonaws.com/637423341661/FredrikEHOrderQueue";
+        this.topicArn = "arn:aws:sns:eu-west-1:637423341661:FredrikEHOrderCreatedTopic";
+        this.eventBusName = "arn:aws:events:eu-west-1:637423341661:event-bus/FredrikEHCustomEventBus";
 
         this.objectMapper = new ObjectMapper();
     }
 
     @GetMapping
-    public ResponseEntity<String> GetAllOrders() {
+    public List<Order> GetAllOrders(){
+    //public ResponseEntity<String> GetAllOrders() {
         ReceiveMessageRequest receiveRequest = ReceiveMessageRequest.builder()
                 .queueUrl(queueUrl)
                 .maxNumberOfMessages(10)
@@ -71,11 +81,13 @@ public class OrderController {
             }
         }
         String status = String.format("%d Orders have been processed", messages.size());
-        return ResponseEntity.ok(status);
+
+        return this.orderRepository.findAll();
+        //return ResponseEntity.ok(status);
     }
 
     @PostMapping
-    public ResponseEntity<String> createOrder(@RequestBody Order order) {
+    public ResponseEntity<Order> createOrder(@RequestBody Order order) {
         try {
             String orderJson = objectMapper.writeValueAsString(order);
             System.out.println(orderJson);
@@ -99,11 +111,33 @@ public class OrderController {
             this.eventBridgeClient.putEvents(putEventsRequest);
 
             String status = "Order created, Message Published to SNS and Event Emitted to EventBridge";
-            return ResponseEntity.ok(status);
+
+            return new ResponseEntity<>(this.orderRepository.save(order), HttpStatus.CREATED);
+            //return ResponseEntity.ok(status);
         } catch (JsonProcessingException e) {
 //            e.printStackTrace();
-            return ResponseEntity.status(500).body("Failed to create order");
+            return new ResponseEntity<>(order, HttpStatus.INTERNAL_SERVER_ERROR);
+            //return ResponseEntity.status(500).body("Failed to create order");
         }
+    }
+
+    @PutMapping("{id}")
+    public ResponseEntity<Order> updateOrder(@PathVariable int id, @RequestBody Order order){
+        Order orderToUpdate = this.orderRepository.findById(id).orElse(null);
+        if(orderToUpdate == null){
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No ");
+        }
+        orderToUpdate.setProduct(order.getProduct());
+        orderToUpdate.setAmount(order.getAmount());
+        orderToUpdate.setQuantity(order.getQuantity());
+        orderToUpdate.setProcessed(order.isProcessed());
+        orderToUpdate.setTotal(order.getQuantity() * order.getAmount());
+
+        if(orderToUpdate.isProcessed()){
+            System.out.println("Test deleteMessage");
+        }
+
+        return new ResponseEntity<>(this.orderRepository.save(orderToUpdate), HttpStatus.CREATED);
     }
 
     private void processOrder(Order order) {

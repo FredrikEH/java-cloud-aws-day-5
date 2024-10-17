@@ -37,6 +37,6 @@ public class Order {
         this.quantity = quantity;
         this.amount = amount;
         this.processed = processed;
-        this.total = total;
+        this.total = quantity * amount;
     }
 }
